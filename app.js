@@ -1,11 +1,6 @@
 const express = require('express');
 const app = express();
 require("dotenv").config()
-//sockets imports
-const http = require("http")
-const server = http.createServer(app)
-const { Server  } = require("socket.io")
-const io = new Server(server)
 const mongoose = require("mongoose");
 const bcrypt = require('bcrypt');
 app.use(express.json());
@@ -20,48 +15,42 @@ mongoose.connect(mongourl)
     console.log(error);
   });
   
-  //Socket logic
-  require('./schemas/chat_schema.js')
-  const ChatModel = mongoose.model("mental health Chat")
-  
-  //Socket.io
-  io.on("connection",async (socket)=>{
+  //Chat logic
+require('./schemas/chat_schema.js')
+const ChatModel = mongoose.model("mental health Chat")
+app.get('/api/messages', async (req, res) => {
+  try {
+    const messages = await ChatModel.find(
+      {},
+      { userId: 1, userName: 1, textMessage: 1, sentDate: 1, messageReceipt: 1 }
+    )
+    .sort({ sentDate: -1 })
+    .lean();
     
-    console.log("New Client: - ",socket.id)
-    
-  //send all pervious messages 
-  const mongoResult = await ChatModel.find({},{userId: 1,userName: 1, textMessage: 1,sentDate: 1, messageReceipt: 1})
-  .sort({sentDate: -1}) //sort by date, new wala phle
-  .lean()
-  
-  io.emit("message",mongoResult)
-  
-  
-  socket.on("receiveMessage",()=>{
-  io.emit("message",mongoResult)
-})
+    return res.status(200).json(messages);
+  } catch (error) {
+    console.error('Error fetching messages:', error);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
 
-  socket.on("message",async (message)=>{  
-      console.log(message)
-      // io.emit("message",message)   
-      const result =  await ChatModel.create({
-        userId: message.userId,
-          userName: message.userName,
-          textMessage: message.textMessage,
-          sentDate: message.sentDate,
-          messageReceipt: message.messageReceipt
-        })
-        console.log(result)
-        socket.broadcast.emit("message",result.toObject())
-      })
-      
-      socket.on("disconnect",()=>{
-        console.log("Client disconnected - ",socket.id)
-      })
-    })
+app.post('/api/messages', async (req, res) => {
+  try {
+    const message = await ChatModel.create({
+      userId: req.body.userId,
+      userName: req.body.userName,
+      textMessage: req.body.textMessage,
+      sentDate: req.body.sentDate,
+      messageReceipt: req.body.messageReceipt
+    });
     
+    return res.status(201).json(message);
+  } catch (error) {
+    console.error('Error creating message:', error);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
 //ends here!
-
 // Login/Signup
 require('./schemas/user_schema.js');
 const User = mongoose.model("user_schema");
@@ -230,7 +219,7 @@ app.get('/getlastpostid', async (req, res) => {
   }
 });
 
-server.listen(process.env.PORT || 5002, () => {
+app.listen(process.env.PORT || 5002, () => {
   console.log("Server Started");
 });
 
