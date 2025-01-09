@@ -242,7 +242,7 @@ app.post('/addpost', validateRequest, async (req, res, next) => {
 
 app.get('/getpost', async (req, res, next) => {
   try {
-    const posts = await Post.find().sort({post_time: -1});
+    const posts = await Post.find();
     
     if (!posts || posts.length === 0) {
       return res.status(404).json({ 
