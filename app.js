@@ -174,35 +174,68 @@ app.post('/addpost', validateRequest, async (req, res, next) => {
         message: 'All fields are required'
       });
     }
+    console.log(username, post_type, post_title, post_content, post_date, post_time);
 
-    const count = await Post.countDocuments();
-    let post_id = `P${count + 1}`;
-    
-    const existingPost = await Post.findOne({ post_id });
-    if (existingPost) {
-      const highestPost = await Post.findOne().sort({ post_id: -1 });
-      const highestNum = highestPost ? parseInt(highestPost.post_id.substring(1)) : 0;
-      post_id = `P${highestNum + 1}`;
+    // Maximum retry attempts to prevent infinite loops
+    const MAX_RETRIES = 10;
+    let retryCount = 0;
+    let result = null;
+
+    while (retryCount < MAX_RETRIES && !result) {
+      try {
+        // Find the highest post_id first
+        const highestPost = await Post.findOne({}, { post_id: 1 }, { sort: { post_id: -1 } });
+        let nextPostNumber = 1;
+        
+        if (highestPost) {
+          // Extract the number from the highest post_id and add 1 + retry count
+          const currentHighestNumber = parseInt(highestPost.post_id.substring(1));
+          nextPostNumber = currentHighestNumber + 1 + retryCount;
+        }
+        
+        const post_id = `P${nextPostNumber}`;
+        console.log('Attempting with post_id:', post_id);
+        
+        const newPost = new Post({
+          username,
+          post_id,
+          post_type,
+          post_title,
+          post_content,
+          post_date,
+          post_time
+        });
+
+        // Try to save the post
+        result = await newPost.save();
+        
+      } catch (error) {
+        if (error.code === 11000) {
+          // If duplicate key error, increment retry count and try again
+          retryCount++;
+          console.log(`Duplicate key found, retrying... Attempt ${retryCount} of ${MAX_RETRIES}`);
+          
+          if (retryCount === MAX_RETRIES) {
+            return res.status(500).json({
+              status: 'error',
+              message: 'Failed to generate unique post ID after maximum retries'
+            });
+          }
+          continue;
+        }
+        // If it's not a duplicate key error, throw it
+        throw error;
+      }
     }
-    
-    const newPost = new Post({
-      username,
-      post_id,
-      post_type,
-      post_title,
-      post_content,
-      post_date,
-      post_time
-    });
 
-    const result = await newPost.save();
-    
     return res.status(201).json({
       status: 'ok',
       message: 'Posted Successfully',
       result
     });
+    
   } catch (error) {
+    console.error('Error in addpost:', error);
     next(error);
   }
 });
